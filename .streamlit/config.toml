@@ -1,0 +1,27 @@
+# Tema visual de MODEXRE — paleta forense/ciberseguridad (azul oscuro +
+# acento rojo/naranja para alertas), en vez del tema por defecto de
+# Streamlit. Streamlit lee este fichero automáticamente al arrancar,
+# no requiere ningún cambio en frontend/app.py.
+
+[theme]
+# Azul acero oscuro como color principal de acento (botones, enlaces,
+# barra activa de pestañas) — transmite seriedad/tecnicidad.
+primaryColor = "#2E5A8A"
+
+# Fondo principal: gris muy claro casi blanco, mejor contraste que el
+# blanco puro para lectura prolongada de informes.
+backgroundColor = "#FAFBFC"
+
+# Fondo secundario (sidebar, tarjetas, code blocks): azul-gris muy claro.
+secondaryBackgroundColor = "#EEF2F7"
+
+# Texto principal: gris carbón, no negro puro (menos fatiga visual).
+textColor = "#1A2733"
+
+font = "sans serif"
+
+[server]
+# Streamlit limita las subidas a 200 MB por defecto. Con datasets
+# completos de investigación (CICIDS2017 sin muestrear puede superar
+# 1 GB) o capturas PCAP grandes, hace falta más margen.
+maxUploadSize = 2048

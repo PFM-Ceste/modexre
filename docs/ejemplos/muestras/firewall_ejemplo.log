@@ -1,0 +1,6 @@
+<134>Jul 29 2026 10:15:00 fw01 CEF:0|PaloAltoNetworks|PAN-OS|10.1|THREAT-SCAN|Suspicious Port Scan Detected|8|src=198.51.100.23 spt=50000 dst=10.0.0.15 dpt=21 proto=TCP act=blocked cat=Reconnaissance msg=Port scan pattern detected
+<134>Jul 29 2026 10:15:02 fw01 CEF:0|PaloAltoNetworks|PAN-OS|10.1|THREAT-SCAN|Suspicious Port Scan Detected|8|src=198.51.100.23 spt=50001 dst=10.0.0.15 dpt=22 proto=TCP act=blocked cat=Reconnaissance msg=Port scan pattern detected
+<134>Jul 29 2026 10:15:04 fw01 CEF:0|PaloAltoNetworks|PAN-OS|10.1|THREAT-SCAN|Suspicious Port Scan Detected|8|src=198.51.100.23 spt=50002 dst=10.0.0.15 dpt=23 proto=TCP act=blocked cat=Reconnaissance msg=Port scan pattern detected
+<134>Jul 29 2026 10:15:06 fw01 CEF:0|PaloAltoNetworks|PAN-OS|10.1|THREAT-SCAN|Suspicious Port Scan Detected|8|src=198.51.100.23 spt=50003 dst=10.0.0.15 dpt=443 proto=TCP act=blocked cat=Reconnaissance msg=Port scan pattern detected
+<134>Jul 29 2026 10:15:08 fw01 CEF:0|PaloAltoNetworks|PAN-OS|10.1|THREAT-SCAN|Suspicious Port Scan Detected|8|src=198.51.100.23 spt=50004 dst=10.0.0.15 dpt=3389 proto=TCP act=blocked cat=Reconnaissance msg=Port scan pattern detected
+<134>Jul 29 2026 10:20:00 fw01 CEF:0|Fortinet|FortiGate|7.0|TRAFFIC-ALLOW|Standard allowed connection|Low|src=10.0.0.42 spt=54000 dst=93.184.216.34 dpt=443 proto=TCP act=allowed

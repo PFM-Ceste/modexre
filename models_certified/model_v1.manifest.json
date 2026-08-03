@@ -1,0 +1,31 @@
+{
+  "version": "v1",
+  "model_file": "model_v1.ubj",
+  "model_hash": "5b584dcd1082efbb9f568980df6ef180a872b0a64563074335ffaab002a99e34",
+  "feature_names": [
+    "agg_distinct_dst_hosts",
+    "agg_distinct_dst_ports",
+    "agg_events_in_window",
+    "duration",
+    "packets_in",
+    "packets_out"
+  ],
+  "class_names": [
+    "BruteForce",
+    "DoS",
+    "Normal",
+    "PortScan"
+  ],
+  "metrics": {
+    "accuracy": 0.9617169373549884,
+    "f1_macro": 0.9537575057996169,
+    "f1_weighted": 0.9611313591222701,
+    "precision_macro": 0.9640018165873214,
+    "recall_macro": 0.9463741671702105,
+    "n_train": 3448,
+    "n_test": 862
+  },
+  "trained_at": "2026-07-29T10:41:24.481726+00:00",
+  "algorithm": "XGBoost",
+  "xgboost_version": "3.3.0"
+}

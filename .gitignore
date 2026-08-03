@@ -1,0 +1,34 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+
+# --- Node (generación de informes .docx) ---
+node_modules/
+
+# --- Datasets grandes (carpetas de trabajo, vacías en el repo base) ---
+data/raw/*
+data/synthetic/*
+data/ocsf_normalized/*
+!data/raw/.gitkeep
+!data/synthetic/.gitkeep
+!data/ocsf_normalized/.gitkeep
+
+# --- Modelos entrenados pesados (mantener solo los certificados en models_certified/) ---
+*.pkl
+*.joblib
+
+# --- Informes generados en tiempo de ejecución (no los de ejemplo en docs/) ---
+/informes/
+/outputs/
+
+# --- Entornos y configuración local ---
+.env
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,13 @@
+{
+  "v1": {
+    "f1_macro": 0.9537575057996169,
+    "n_features": 6,
+    "clases": [
+      "BruteForce",
+      "DoS",
+      "Normal",
+      "PortScan"
+    ],
+    "proposito": "Modelo único recomendado para MODEXRE. Multi-clase (Normal/PortScan/DoS/BruteForce), con agregación entre flujos por origen. Válido para CUALQUIER fuente de evidencia (Suricata, firewall, PCAP, CSV) — el ingestor universal normaliza todo al mismo formato antes de llegar aquí, así que no hace falta un modelo distinto por fuente."
+  }
+}

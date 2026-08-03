@@ -1,0 +1,30 @@
+# --- API backend ---
+fastapi
+uvicorn[standard]
+
+# --- Interfaz ---
+streamlit
+
+# --- Manejo de datos ---
+pandas
+
+# --- Generación de datos sintéticos (modo Laboratorio) ---
+sdv
+
+# --- Modelo y explicabilidad ---
+scikit-learn
+xgboost
+shap
+
+# --- Ingesta de evidencia (PCAP) ---
+scapy
+
+# --- Informe pericial ---
+python-docx
+matplotlib
+
+# --- Tests ---
+pytest
+
+# Nota: la generación del informe .docx final usa además la librería npm "docx"
+# (Node.js), instalada aparte con `npm install docx` — no es un paquete Python.
