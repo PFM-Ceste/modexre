@@ -105,3 +105,85 @@ def test_original_events_not_mutated_in_place():
     enrich_with_aggregation(events)
     assert id(events[0]["unmapped"]) == original_unmapped_id
     assert "agg_distinct_dst_ports" not in events[0]["unmapped"]["raw_flow_features"]
+
+
+# --- Regresión: capturas cortas no deben inflar la señal de volumen ---
+#
+# Motivada por un caso real (informe_tecnico_case_2026_001): un host
+# activo durante TODA una captura corta (16s, muy por debajo de la
+# ventana nominal de 60s) fue clasificado como malicioso (BruteForce)
+# con `agg_events_in_window` como variable SHAP dominante, cuando en
+# realidad se trataba de un barrido de red benigno o al menos no
+# relacionado con fuerza bruta: el conteo absoluto de eventos en
+# ventana no distinguía "mucha actividad en poco tiempo porque la
+# captura es corta" de "mucha actividad porque hay un ataque en
+# curso". agg_events_per_second normaliza por el tiempo realmente
+# observado y debe dar una magnitud comparable en ambos escenarios.
+
+def test_short_capture_does_not_inflate_rate_vs_long_capture():
+    """Un mismo host con el MISMO ritmo de eventos (1 evento/segundo)
+    debe producir aproximadamente la misma agg_events_per_second tanto
+    en una captura corta como en una larga, aunque agg_events_in_window
+    (conteo absoluto) sea muy distinto entre ambas."""
+    # Captura corta: 16 eventos en 16 segundos (1 evento/s), como el
+    # caso real que motivó este test.
+    short_capture = [
+        _event("10.100.111.184", f"10.100.{i}.1", 80, f"2026-08-04T10:00:{i:02d}+00:00")
+        for i in range(16)
+    ]
+    # Captura larga: mismo ritmo (1 evento/s) pero sostenido 55s.
+    long_capture = [
+        _event("10.100.111.184", f"10.100.{i}.1", 80, f"2026-08-04T10:00:{i:02d}+00:00")
+        for i in range(55)
+    ]
+
+    enriched_short = enrich_with_aggregation(short_capture, window_seconds=60)
+    enriched_long = enrich_with_aggregation(long_capture, window_seconds=60)
+
+    last_short = enriched_short[-1]["unmapped"]["raw_flow_features"]
+    last_long = enriched_long[-1]["unmapped"]["raw_flow_features"]
+
+    # El conteo absoluto SÍ difiere mucho entre ambas capturas (esto
+    # es precisamente el problema que se corrige): 16 vs 55.
+    assert last_short["agg_events_in_window"] == 16
+    assert last_long["agg_events_in_window"] == 55
+
+    # Pero la TASA (eventos/segundo) debe ser comparable en ambas,
+    # porque el ritmo real de actividad es el mismo (1 evento/s):
+    # así, un modelo entrenado con la tasa no confundiría "captura
+    # corta con host activo" con "captura larga con host activo".
+    assert last_short["agg_events_per_second"] == pytest.approx(1.0, abs=0.15)
+    assert last_long["agg_events_per_second"] == pytest.approx(1.0, abs=0.15)
+    # Ambas tasas deben quedar próximas entre sí (no separadas por un
+    # factor ~3.4x como ocurriría comparando los conteos absolutos).
+    ratio = last_long["agg_events_per_second"] / last_short["agg_events_per_second"]
+    assert 0.7 <= ratio <= 1.3
+
+
+def test_agg_events_per_second_does_not_explode_on_single_event():
+    """Con un único evento en la ventana, el intervalo observado es 0:
+    debe aplicarse el suelo mínimo, no producir una tasa infinita ni
+    una división por cero."""
+    events = [_event("10.0.0.5", "203.0.113.7", 22, "2026-07-28T10:00:00+00:00")]
+    enriched = enrich_with_aggregation(events, window_seconds=60)
+    feats = enriched[0]["unmapped"]["raw_flow_features"]
+    assert feats["agg_events_in_window"] == 1
+    assert feats["agg_events_per_second"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_agg_events_per_second_is_additive_not_breaking_existing_fields():
+    """El nuevo campo no debe alterar los campos ya usados por
+    model_v1 (agg_distinct_dst_ports, agg_distinct_dst_hosts,
+    agg_events_in_window): deben mantener exactamente el mismo valor
+    que antes de esta corrección, para no invalidar el modelo ya
+    certificado."""
+    events = [
+        _event("10.0.0.5", "203.0.113.7", port, f"2026-07-28T10:00:0{i}+00:00")
+        for i, port in enumerate([22, 23, 80, 443, 8080])
+    ]
+    enriched = enrich_with_aggregation(events, window_seconds=60)
+    last = enriched[-1]["unmapped"]["raw_flow_features"]
+    assert last["agg_distinct_dst_ports"] == 5
+    assert last["agg_distinct_dst_hosts"] == 1
+    assert last["agg_events_in_window"] == 5
+    assert "agg_events_per_second" in last  # presente, pero es un campo NUEVO
