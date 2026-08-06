@@ -25,7 +25,8 @@ Referencia OCSF: https://schema.ocsf.io/1.4.0/classes/detection_finding
 from __future__ import annotations
 
 import re
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 DETECTION_FINDING_CLASS_UID = 2004
 DETECTION_FINDING_CATEGORY_UID = 2
@@ -82,6 +83,53 @@ def _severity_to_ocsf(raw_severity: str) -> int:
     if n <= 8:
         return 5
     return 6
+
+
+def _parse_syslog_timestamp(syslog_prefix: str) -> Optional[str]:
+    """Extrae el timestamp del prefijo syslog de una línea CEF y lo
+    devuelve en ISO 8601 (UTC), o None si no se reconoce el formato.
+
+    IMPORTANTE (bug corregido): antes, cef_event_to_ocsf() nunca
+    poblaba el campo 'time' del evento OCSF -- solo conservaba el
+    prefijo syslog como texto en bruto en unmapped.syslog_prefix. Esto
+    hacía que enrich_with_aggregation() (ver flow_aggregation.py)
+    nunca pudiera calcular agg_distinct_dst_hosts/agg_distinct_dst_ports
+    /agg_events_in_window para evidencia CEF, aunque src_endpoint.ip sí
+    estuviera presente: sin timestamp interpretable, esas variables se
+    quedaban siempre a 0 (rama por defecto de enrich_with_aggregation),
+    dejando a la evidencia de firewall completamente fuera del
+    beneficio de la corrección del Hallazgo 4.
+
+    Soporta dos variantes reales observadas en distintos fabricantes:
+      - Con año explícito (p.ej. Fortinet/PAN-OS en algunos formatos):
+        "Aug 06 2026 10:15:00"
+      - Formato BSD syslog clásico, sin año (RFC 3164):
+        "Aug 06 10:15:00" -- se asume el año actual, único dato
+        razonable disponible sin contexto adicional.
+    """
+    if not syslog_prefix:
+        return None
+
+    # Quitar un posible <PRI> inicial (ya debería venir sin él aquí,
+    # pero se tolera por si acaso).
+    prefix = re.sub(r"^<\d+>", "", syslog_prefix).strip()
+
+    for fmt in ("%b %d %Y %H:%M:%S", "%b %d %H:%M:%S"):
+        # Se prueba emparejando solo los primeros tokens relevantes
+        # del prefijo (el hostname del dispositivo puede venir después).
+        parts = prefix.split()
+        n_tokens = len(fmt.split())
+        candidate = " ".join(parts[:n_tokens])
+        try:
+            dt = datetime.strptime(candidate, fmt)
+        except (ValueError, IndexError):
+            continue
+        if "%Y" not in fmt:
+            dt = dt.replace(year=datetime.now(timezone.utc).year)
+        dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+    return None
 
 
 def parse_cef_line(raw_line: str) -> dict[str, Any]:
@@ -142,6 +190,7 @@ def cef_event_to_ocsf(raw_line: str) -> dict[str, Any]:
         "category_uid": DETECTION_FINDING_CATEGORY_UID,
         "activity_id": DEFAULT_ACTIVITY_ID,
         "severity_id": _severity_to_ocsf(parsed["severity"]),
+        "time": _parse_syslog_timestamp(parsed["syslog_prefix"]),
         "src_endpoint": {
             "ip": known_aliased.get("src_ip"),
             "port": known_aliased.get("src_port"),

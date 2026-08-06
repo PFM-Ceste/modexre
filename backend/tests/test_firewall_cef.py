@@ -123,3 +123,48 @@ def test_normalize_cef_lines_skips_invalid_lines(firewall_log_file):
     # 3 líneas en el fichero, 1 no es CEF -> 2 eventos OCSF válidos
     assert len(ocsf_events) == 2
     assert all(e["class_uid"] == DETECTION_FINDING_CLASS_UID for e in ocsf_events)
+
+
+# --- Regresión: cef_event_to_ocsf debe poblar 'time' ---
+#
+# Bug encontrado validando MODEXRE con un log de firewall real que
+# replica el patrón de barrido horizontal ya corregido en flow_
+# aggregation.py (ver Hallazgo 4 de la memoria): cef_event_to_ocsf()
+# nunca extraía el timestamp del prefijo syslog al campo 'time' del
+# evento OCSF, solo lo guardaba como texto en unmapped.syslog_prefix.
+# Sin 'time', enrich_with_aggregation() no podía calcular ninguna
+# señal de agregación para evidencia CEF (siempre caía a la rama por
+# defecto, con todo a 0), dejando a los logs de firewall completamente
+# fuera del beneficio del Hallazgo 4, aunque sí tuvieran IP de origen.
+
+def test_cef_populates_time_field_with_year():
+    line = "<134>Aug 06 2026 10:15:00 fw01 " + CEF_LINE_THREAT
+    ocsf = cef_event_to_ocsf(line)
+    assert ocsf["time"] == "2026-08-06T10:15:00+00:00"
+
+
+def test_cef_populates_time_field_without_year_assumes_current_year():
+    from datetime import datetime, timezone
+    line = "<134>Aug 06 10:15:00 fw01 " + CEF_LINE_THREAT
+    ocsf = cef_event_to_ocsf(line)
+    assert ocsf["time"] is not None
+    assert ocsf["time"].startswith(f"{datetime.now(timezone.utc).year}-08-06T10:15:00")
+
+
+def test_cef_time_field_enables_real_aggregation():
+    """Prueba de extremo a extremo: con el timestamp ya poblado, un
+    barrido horizontal (mismo origen, muchos destinos distintos, pocos
+    puertos) debe producir agg_distinct_dst_hosts alto -- antes de
+    este fix, siempre habría sido 0 para evidencia CEF."""
+    from app.features.flow_aggregation import enrich_with_aggregation
+
+    base = ("<134>Aug 06 2026 10:15:{sec:02d} fw01 CEF:0|Fortinet|FortiGate|7.4|"
+            "SCAN|Host sweep|6|src=10.0.0.99 spt={sport} dst=10.0.0.{i} dpt=80 proto=TCP act=allowed")
+    lines = [base.format(sec=i, sport=51000 + i, i=i + 1) for i in range(6)]
+    events = [cef_event_to_ocsf(l) for l in lines]
+
+    enriched = enrich_with_aggregation(events, window_seconds=60)
+    last = enriched[-1]["unmapped"]["raw_flow_features"]
+
+    assert last["agg_distinct_dst_hosts"] == 6
+    assert last["agg_distinct_dst_ports"] == 1
