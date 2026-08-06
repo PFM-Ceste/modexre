@@ -34,6 +34,7 @@ from app.features.feature_engineering import build_feature_matrix, extract_label
 from app.models.classifier import (
     FrozenClassifier,
     save_model_artifact,
+    train_multiclass_from_labels,
     train_xgboost_classifier,
 )
 from app.models.training import SyntheticGenerationConfig, generate_synthetic_dataset
@@ -178,13 +179,33 @@ with tab_lab:
                         for row in df.to_dict(orient="records")
                     ]
                     X, feature_names = build_feature_matrix(events)
-                    y = [extract_label(e) for e in events]
 
-                    model, metrics = train_xgboost_classifier(X, y)
-                    manifest = save_model_artifact(model, feature_names, metrics, model_version, MODEL_DIR)
+                    # CORRECCIÓN: antes se entrenaba en modo binario
+                    # (extract_label -> 0/1) descartando por completo
+                    # attack_cat, aunque el CSV subido trajera decenas
+                    # de miles de filas con la categoría completa
+                    # (PortScan, Reconnaissance, BruteForce...). Esto
+                    # producía modelos "certificados" que en Formal
+                    # solo podían distinguir Normal/Ataque genérico,
+                    # nunca la categoría específica -- confirmado en
+                    # el caso real case_2026_001, donde model_v2 (pese
+                    # a haberse entrenado con datos que sí distinguían
+                    # Reconnaissance de PortScan por su patrón real de
+                    # agregación) nunca llegó a aprender esa distinción,
+                    # porque el propio flujo de certificación se la
+                    # ocultaba antes de entrenar.
+                    attack_cat_labels = [
+                        e.get("unmapped", {}).get("attack_cat") for e in events
+                    ]
+                    model, metrics, encoder = train_multiclass_from_labels(X, attack_cat_labels)
+                    manifest = save_model_artifact(
+                        model, feature_names, metrics, model_version, MODEL_DIR,
+                        class_names=encoder.classes_.tolist(),
+                    )
 
                     st.success(f"Modelo '{model_version}' certificado y congelado.")
                     st.json(manifest["metrics"])
+                    st.caption(f"Clases aprendidas: {', '.join(encoder.classes_.tolist())}")
                     st.caption(f"Hash del modelo: `{manifest['model_hash'][:16]}...`")
 
     st.divider()
