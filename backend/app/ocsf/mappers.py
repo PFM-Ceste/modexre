@@ -45,6 +45,16 @@ ALLOWED_ATTACK_CATEGORIES = {
     "Normal", "Fuzzers", "Exploits", "DoS", "Reconnaissance", "Generic",
     "Analysis", "Shellcode", "Backdoors", "DDoS", "PortScan", "MitM",
     "BruteForce",
+    # Ampliación (ver notebooks de limpieza corregidos / hallazgo de
+    # barrido horizontal en el pcap real case_2026_001): estas 6
+    # categorías son nativas de CICIDS2017 (Bot, Web Attack – Xss,
+    # Web Attack – Sql Injection, Heartbleed, Infiltration) y de
+    # UNSW-NB15 (Worms), y antes se perdían dentro de "Generic" al no
+    # estar en esta lista. Se recuperan como clases propias para no
+    # descartar señal real que el modelo sí puede aprender a
+    # distinguir.
+    "Bot", "Worms", "Heartbleed", "Infiltration",
+    "Web Attack – Xss", "Web Attack – Sql Injection",
 }
 
 # Campos de flujo conocidos por fuente, para extraerlos a los bloques

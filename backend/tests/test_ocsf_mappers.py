@@ -70,6 +70,19 @@ def test_rejects_attack_cat_outside_closed_taxonomy():
         event_to_ocsf("cicids2017", event)
 
 
+def test_extended_categories_accepted():
+    """Regresión: Bot, Worms, Heartbleed, Infiltration y las dos
+    variantes de Web Attack se recuperaron como clases propias tras
+    detectar, en un pcap real (case_2026_001), que colapsarlas dentro
+    de 'Generic' descartaba señal real distinguible por el modelo.
+    No deben volver a rechazarse como fuera de taxonomía."""
+    for cat in ["Bot", "Worms", "Heartbleed", "Infiltration",
+                "Web Attack – Xss", "Web Attack – Sql Injection"]:
+        event = {"attack_cat": cat, "label": 1, "protocol": 6, "flow_duration": 1000}
+        ocsf = event_to_ocsf("cicids2017", event)
+        assert ocsf["unmapped"]["attack_cat"] == cat
+
+
 def test_missing_attack_cat_raises_key_error():
     with pytest.raises(KeyError):
         event_to_ocsf("cicids2017", {"label": 0, "protocol": 6})
