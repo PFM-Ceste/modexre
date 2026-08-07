@@ -96,3 +96,44 @@ def test_normalize_to_ocsf_dispatch():
 def test_normalize_to_ocsf_rejects_unknown_source():
     with pytest.raises(ValueError):
         normalize_to_ocsf("fuente_desconocida", {"attack_cat": "Normal", "label": 0})
+
+
+# --- Regresión: NaN debe tratarse igual que ausencia real de columna ---
+#
+# Motivada por la simulación de cobertura parcial en el entrenamiento
+# (ver notebooks/escenarios_agregacion_model_v2.ipynb): un hueco vacío
+# en un CSV leído con pandas se convierte en float('nan'), no en
+# None. Sin esta corrección, "nan is not None" es True, así que el
+# NaN pasaba el chequeo, se incluía en connection_info/traffic, y
+# acababa convertido en 0.0 más adelante en feature_engineering.py --
+# impidiendo que el modelo aprendiera nunca de ejemplos de ausencia
+# real, por muchos que se generasen en el dataset de entrenamiento.
+
+def test_nan_duration_is_omitted_like_missing_column():
+    event = {
+        "attack_cat": "Normal", "label": 0,
+        "flow_duration": float("nan"), "total_fwd_packets": 5,
+    }
+    ocsf = event_to_ocsf("cicids2017", event)
+    assert "duration" not in ocsf["connection_info"]
+    assert ocsf["traffic"]["packets_out"] == 5
+
+
+def test_nan_traffic_field_is_omitted_but_real_zero_is_kept():
+    event = {
+        "attack_cat": "Normal", "label": 0,
+        "flow_duration": 1.5,
+        "total_fwd_packets": float("nan"),   # ausente de verdad
+        "total_backward_packets": 0,          # valor real, igual a cero
+    }
+    ocsf = event_to_ocsf("cicids2017", event)
+    assert "packets_out" not in ocsf["traffic"]
+    assert ocsf["traffic"]["packets_in"] == 0
+
+
+def test_none_still_treated_as_missing_as_before():
+    """La corrección no debe romper el comportamiento ya existente
+    para None (el caso que ya funcionaba antes de esta corrección)."""
+    event = {"attack_cat": "Normal", "label": 0, "flow_duration": None}
+    ocsf = event_to_ocsf("cicids2017", event)
+    assert "duration" not in ocsf["connection_info"]

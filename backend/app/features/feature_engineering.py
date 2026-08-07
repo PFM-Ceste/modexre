@@ -102,26 +102,43 @@ def build_feature_matrix(
     entrenamiento), se infiere como la unión ordenada de todas las
     features vistas.
 
-    NOTA DE DISEÑO -- por qué NO se usa np.nan aquí (evaluado y
-    descartado): rellenar con 0.0 confunde "este dato no existe" con
-    "el valor real es cero", lo cual es conceptualmente incorrecto
-    para evidencia con cobertura parcial (p.ej. CEF, que no siempre
-    reporta duration/packets). xgb.XGBClassifier soporta nativamente
-    np.nan como "ausente" (missing=np.nan por defecto), lo que en
-    teoría sería más correcto. Sin embargo, se probó empíricamente
-    contra model_v3 (entrenado SIEMPRE con estas columnas presentes,
-    nunca con valores ausentes) y el cambio resultó CONTRAPRODUCENTE:
-    sin haber visto nunca un NaN en entrenamiento, la dirección por
-    defecto que XGBoost asigna a cada división del árbol para valores
-    ausentes es esencialmente arbitraria, y en este modelo concreto
-    enruta la mayoría de los eventos con NaN hacia "Normal" con
-    confianza muy alta (0.99+), peor que el 0.0 en el caso de barrido
-    de red validado con evidencia CEF real. Adoptar np.nan de forma
-    correcta exige reentrenar incluyendo ejemplos con ausencia real de
-    estas columnas (simulando la cobertura parcial de CEF/Suricata) en
-    el propio conjunto de entrenamiento, para que XGBoost aprenda una
-    dirección por defecto informada -- línea de trabajo futura, no
-    aplicada en esta versión para no invalidar model_v3 ya validado.
+    HISTORIAL DE ESTA DECISIÓN (tres intentos, documentados con
+    evidencia empírica real -- ver Capítulo 4/5 de la memoria):
+
+    1. Relleno con 0.0 (esta versión, la vigente): confunde "dato
+       ausente" con "valor real cero" -- riesgo tipo Hallazgo 1
+       (variable que filtra un artefacto de construcción). Es, no
+       obstante, la que da el MEJOR resultado real validado hasta la
+       fecha sobre evidencia CEF (model_v3: 7/20 eventos de un
+       barrido de red real correctamente identificados como
+       Reconnaissance).
+
+    2. Relleno con np.nan sin reentrenar (probado y descartado):
+       aplicado sobre model_v3 -entrenado siempre con estas columnas
+       presentes- la dirección por defecto de XGBoost para valores
+       ausentes resultó arbitraria: 0/20 eventos correctos, peor que
+       la opción 1.
+
+    3. Relleno con np.nan CON reentrenamiento (model_v4, probado y
+       descartado): se reentrenó incluyendo un 30% de filas con
+       ausencia real de estas columnas (ver notebooks/
+       escenarios_agregacion_model_v2.ipynb, MISSING_FRACTION, ahora
+       desactivado). Resultado, confirmado con SHAP: la inyección
+       aleatoria uniforme de NaN, combinada con que "Normal" es la
+       clase ampliamente mayoritaria del conjunto de entrenamiento,
+       hizo que XGBoost aprendiera "NaN en duration -> probablemente
+       Normal" como prior espurio, AÚN PEOR que el intento 2: 0/20
+       eventos correctos, con probabilidades de 0.94-1.00 hacia
+       Normal en el barrido de red real.
+
+    Conclusión: manejar de verdad la cobertura de características
+    desigual entre fuentes exige, previsiblemente, algo más que un
+    esquema de relleno o un reentrenamiento con ausencia aleatoria
+    (p.ej. un indicador explícito de "cobertura reducida", o un
+    modelo dedicado para evidencia con features base ausentes) --
+    línea de trabajo futura, fuera del alcance actual. Se mantiene
+    0.0 por ser la opción con mejor evidencia empírica real de las
+    tres probadas, no por ser la conceptualmente ideal.
     """
     per_event_features = [ocsf_event_to_feature_dict(e) for e in ocsf_events]
 

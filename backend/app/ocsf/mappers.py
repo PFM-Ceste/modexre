@@ -27,7 +27,27 @@ Referencia de esquema: https://schema.ocsf.io/1.4.0/classes/network_activity
 
 from __future__ import annotations
 
+import math
 from typing import Any
+
+
+def _is_missing(value: Any) -> bool:
+    """True si `value` representa un dato ausente: None, o NaN (float).
+
+    Necesario porque un hueco vacío en un CSV leído con pandas se
+    convierte en `float('nan')`, no en `None` -- y `nan is not None`
+    es True, así que un simple chequeo `is not None` deja pasar el
+    NaN como si fuera un valor real, para acabar convertido en 0.0 más
+    adelante (ver ocsf_event_to_feature_dict en feature_engineering.py).
+    Esto impedía distinguir "ausente" de "valor real cero" incluso
+    cuando el dato de origen ya representaba correctamente la
+    ausencia (p.ej. una columna duration/packets vacía en un CSV de
+    entrenamiento que simula cobertura parcial tipo CEF)."""
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    return False
 
 NETWORK_ACTIVITY_CLASS_UID = 4001
 NETWORK_ACTIVITY_CATEGORY_UID = 4
@@ -145,13 +165,13 @@ def event_to_ocsf(source_name: str, event: dict[str, Any], require_label: bool =
     connection_info: dict[str, Any] = {}
     if known.get("protocol") and event.get(known["protocol"]) is not None:
         connection_info["protocol_raw"] = event[known["protocol"]]
-    if known.get("duration") and event.get(known["duration"]) is not None:
+    if known.get("duration") and not _is_missing(event.get(known["duration"])):
         connection_info["duration"] = event[known["duration"]]
 
     traffic: dict[str, Any] = {}
     for ocsf_key in ("packets_out", "packets_in", "bytes_out", "bytes_in"):
         src_col = known.get(ocsf_key)
-        if src_col and event.get(src_col) is not None:
+        if src_col and not _is_missing(event.get(src_col)):
             traffic[ocsf_key] = event[src_col]
 
     known_cols = set(known.values()) | {"attack_cat", "label"}

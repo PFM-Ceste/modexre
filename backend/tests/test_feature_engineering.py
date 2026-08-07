@@ -2,23 +2,20 @@
 Tests de app/features/feature_engineering.py::build_feature_matrix
 ======================================================================
 
-Documenta una decisión de diseño evaluada y descartada: se probó
-sustituir el relleno de columnas ausentes (0.0) por np.nan, apoyándose
-en el soporte nativo de XGBoost para valores ausentes (missing=np.nan
-por defecto). Se descartó tras comprobar empíricamente que model_v3
---entrenado siempre con estas columnas presentes, nunca con valores
-ausentes-- no aprendió una dirección por defecto informada para NaN
-en sus divisiones: al aplicar el cambio sobre evidencia CEF real (que
-no reporta duration/packets), la mayoría de eventos de un barrido de
-red claro se reclasificaron como "Normal" con confianza 0.99+, peor
-que con el relleno a 0.0 ya validado. Adoptar np.nan de forma
-correcta requeriría reentrenar incluyendo ejemplos con ausencia real
-de estas columnas -- línea de trabajo futura, no aplicada aquí para
-no invalidar model_v3 ya validado con evidencia real (Hallazgo 4).
+Decisión final (0.0), tras probar y descartar dos alternativas con
+np.nan -- ver el historial completo documentado en el docstring de
+build_feature_matrix. Resumen:
+
+  1. 0.0 (esta versión): mejor resultado real validado (model_v3,
+     7/20 eventos de un barrido de red real como Reconnaissance).
+  2. np.nan sin reentrenar: 0/20, descartado.
+  3. np.nan CON reentrenamiento (model_v4): 0/20, peor todavía --
+     "NaN en duration" se aprendió como prior espurio hacia la clase
+     mayoritaria (Normal), confirmado con SHAP.
 
 Estos tests fijan el comportamiento actual (relleno con 0.0) como
-contrato explícito, para que un cambio futuro a np.nan sea una
-decisión deliberada y documentada, no un descuido.
+contrato explícito, para que un cambio futuro sea una decisión
+deliberada y documentada, no un descuido.
 """
 
 import sys
@@ -37,10 +34,9 @@ def _event_with_features(**raw_flow_features):
 
 
 def test_missing_feature_columns_are_filled_with_zero():
-    """Comportamiento actual, deliberado: una columna ausente en un
-    evento concreto (p.ej. duration/packets en evidencia CEF) se
-    rellena con 0.0, no con NaN -- ver nota de diseño en el docstring
-    del módulo sobre por qué se evaluó y descartó NaN."""
+    """Comportamiento vigente, deliberado tras evaluar alternativas:
+    una columna ausente en un evento concreto (p.ej. duration/packets
+    en evidencia CEF) se rellena con 0.0, no con NaN."""
     event = _event_with_features(
         agg_distinct_dst_hosts=20, agg_distinct_dst_ports=4, agg_events_in_window=20,
     )

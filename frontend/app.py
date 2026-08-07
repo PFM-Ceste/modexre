@@ -148,7 +148,50 @@ with tab_lab:
 
     with col_b:
         st.subheader("2. Entrenamiento")
-        model_version = st.text_input("Versión del modelo a certificar", value="v1")
+
+        # CORRECCIÓN: antes era un st.text_input libre con
+        # value="v1" fijo -- fácil escribir por error el nombre de
+        # una versión ya certificada (o simplemente no cambiar el
+        # valor por defecto) y sobrescribir un modelo ya validado sin
+        # darse cuenta. Ahora se detectan las versiones existentes,
+        # se sugiere automáticamente la siguiente disponible (v1, v2,
+        # v3... el primer hueco libre), y se avisa explícitamente si
+        # el nombre elegido coincide con uno ya certificado.
+        _existing_versions = sorted(
+            m.stem.replace(".manifest", "").replace("model_", "")
+            for m in MODEL_DIR.glob("*.manifest.json")
+        )
+
+        def _next_free_version(existing: list[str]) -> str:
+            n = 1
+            while f"v{n}" in existing:
+                n += 1
+            return f"v{n}"
+
+        _suggested = _next_free_version(_existing_versions)
+        _options = _existing_versions + [f"{_suggested} (nueva)"]
+
+        if _existing_versions:
+            st.caption(f"Versiones ya certificadas: {', '.join(_existing_versions)}")
+
+        _version_choice = st.selectbox(
+            "Versión del modelo a certificar",
+            options=_options,
+            index=len(_options) - 1,  # por defecto, la nueva sugerida
+        )
+
+        if _version_choice.endswith(" (nueva)"):
+            model_version = _version_choice.replace(" (nueva)", "")
+        else:
+            model_version = _version_choice
+            st.warning(
+                f"⚠️ '{model_version}' ya existe y está certificado. Si entrenas y "
+                f"certificas ahora, **se sobrescribirá** el modelo actual (el "
+                f"anterior dejará de estar disponible en modo Formal, aunque su "
+                f"hash quede en el historial si ya se usó en algún caso). Si no "
+                f"quieres sobrescribirlo, elige '{_suggested} (nueva)' en su lugar."
+            )
+
         train_button = st.button("Entrenar y certificar modelo", type="primary")
 
     if train_button:
