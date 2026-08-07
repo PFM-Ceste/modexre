@@ -157,6 +157,19 @@ uvicorn backend.app.main:app --reload
 streamlit run frontend/app.py
 ```
 
+**En Windows, arranque rápido con doble clic:**
+
+En vez de escribir el comando anterior a mano cada vez, el repositorio
+incluye `Arrancar_MODEXRE.bat` en la raíz del proyecto: haz doble
+clic sobre él y arranca la interfaz Streamlit automáticamente desde
+la carpeta donde hayas clonado el proyecto (no importa cuál sea).
+
+Para tener un acceso directo en el escritorio con icono propio,
+ejecuta una sola vez `Crear_Acceso_Directo.ps1` (clic derecho →
+"Ejecutar con PowerShell"; si Windows bloquea el script, abre
+PowerShell como administrador y ejecuta primero
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`).
+
 - **Pestaña Laboratorio**: sube un CSV limpio (formato TFM1),
   opcionalmente genera datos sintéticos, entrena y certifica un modelo.
 - **Pestaña Formal**: sube evidencia real (Suricata EVE JSON, log de
