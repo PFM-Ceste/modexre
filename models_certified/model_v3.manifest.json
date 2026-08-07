@@ -1,0 +1,46 @@
+{
+  "version": "v3",
+  "model_file": "model_v3.ubj",
+  "model_hash": "8a6fb1657f1998421e74b94dbdc9083886f170360ec60b9559536bd7d377fc7e",
+  "feature_names": [
+    "agg_distinct_dst_hosts",
+    "agg_distinct_dst_ports",
+    "agg_events_in_window",
+    "agg_events_per_second",
+    "duration",
+    "packets_in",
+    "packets_out"
+  ],
+  "class_names": [
+    "Analysis",
+    "Backdoors",
+    "Bot",
+    "BruteForce",
+    "DDoS",
+    "DoS",
+    "Exploits",
+    "Fuzzers",
+    "Generic",
+    "Heartbleed",
+    "Infiltration",
+    "Normal",
+    "PortScan",
+    "Reconnaissance",
+    "Shellcode",
+    "Web Attack – Sql Injection",
+    "Web Attack – Xss",
+    "Worms"
+  ],
+  "metrics": {
+    "accuracy": 0.8907593536993943,
+    "f1_macro": 0.621415206358755,
+    "f1_weighted": 0.8831207706083671,
+    "precision_macro": 0.7628816042076099,
+    "recall_macro": 0.5889180979359733,
+    "n_train": 242361,
+    "n_test": 60591
+  },
+  "trained_at": "2026-08-06T12:30:41.804693+00:00",
+  "algorithm": "XGBoost",
+  "xgboost_version": "3.3.0"
+}

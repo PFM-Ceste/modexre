@@ -163,7 +163,16 @@ def save_model_artifact(
         "xgboost_version": xgb.__version__,
     }
     manifest_path = output_dir / f"model_{version}.manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+    # CORRECCIÓN: encoding="utf-8" explícito. Sin él, write_text() usa
+    # la codificación por defecto de la PLATAFORMA (locale.
+    # getpreferredencoding()), que en Windows suele ser cp1252, no
+    # UTF-8. Con class_names que incluyen caracteres no-ASCII (p.ej.
+    # "Web Attack – Xss", con guion largo U+2013), esto corrompía el
+    # manifiesto de forma silenciosa: se escribía sin error en
+    # Windows, pero quedaba binariamente incompatible con UTF-8 -- y
+    # por tanto ilegible en cualquier otro sistema (Linux, macOS, o
+    # cualquier entorno de despliegue distinto al de entrenamiento).
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return manifest
 
@@ -188,7 +197,7 @@ class FrozenClassifier:
         if not manifest_path.exists():
             raise FileNotFoundError(f"No existe manifest para la versión '{version}' en {model_dir}")
 
-        self.manifest = json.loads(manifest_path.read_text())
+        self.manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         model_path = model_dir / self.manifest["model_file"]
 
         actual_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()

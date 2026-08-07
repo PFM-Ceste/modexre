@@ -101,6 +101,27 @@ def build_feature_matrix(
     evento concreto se rellenan con 0.0. Si no se proporciona (caso de
     entrenamiento), se infiere como la unión ordenada de todas las
     features vistas.
+
+    NOTA DE DISEÑO -- por qué NO se usa np.nan aquí (evaluado y
+    descartado): rellenar con 0.0 confunde "este dato no existe" con
+    "el valor real es cero", lo cual es conceptualmente incorrecto
+    para evidencia con cobertura parcial (p.ej. CEF, que no siempre
+    reporta duration/packets). xgb.XGBClassifier soporta nativamente
+    np.nan como "ausente" (missing=np.nan por defecto), lo que en
+    teoría sería más correcto. Sin embargo, se probó empíricamente
+    contra model_v3 (entrenado SIEMPRE con estas columnas presentes,
+    nunca con valores ausentes) y el cambio resultó CONTRAPRODUCENTE:
+    sin haber visto nunca un NaN en entrenamiento, la dirección por
+    defecto que XGBoost asigna a cada división del árbol para valores
+    ausentes es esencialmente arbitraria, y en este modelo concreto
+    enruta la mayoría de los eventos con NaN hacia "Normal" con
+    confianza muy alta (0.99+), peor que el 0.0 en el caso de barrido
+    de red validado con evidencia CEF real. Adoptar np.nan de forma
+    correcta exige reentrenar incluyendo ejemplos con ausencia real de
+    estas columnas (simulando la cobertura parcial de CEF/Suricata) en
+    el propio conjunto de entrenamiento, para que XGBoost aprenda una
+    dirección por defecto informada -- línea de trabajo futura, no
+    aplicada en esta versión para no invalidar model_v3 ya validado.
     """
     per_event_features = [ocsf_event_to_feature_dict(e) for e in ocsf_events]
 
