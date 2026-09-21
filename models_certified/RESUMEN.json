@@ -1,13 +1,48 @@
 {
+  "nota": "Inventario de los modelos certificados que distribuye MODEXRE. Las metricas de cada uno son las de su propio manifiesto (model_<version>.manifest.json), que es la fuente autoritativa.",
+  "recomendado": "v3",
   "v1": {
     "f1_macro": 0.9537575057996169,
     "n_features": 6,
+    "n_train": 3448,
+    "n_test": 862,
     "clases": [
       "BruteForce",
       "DoS",
       "Normal",
       "PortScan"
     ],
-    "proposito": "Modelo único recomendado para MODEXRE. Multi-clase (Normal/PortScan/DoS/BruteForce), con agregación entre flujos por origen. Válido para CUALQUIER fuente de evidencia (Suricata, firewall, PCAP, CSV) — el ingestor universal normaliza todo al mismo formato antes de llegar aquí, así que no hace falta un modelo distinto por fuente."
+    "proposito": "Primer modelo multi-clase con agregacion causal entre flujos. Anterior a las correcciones de la decision de diseno 4 (normalizacion de la tasa de eventos, ampliacion de la taxonomia y entrenamiento sobre attack_cat). Se conserva como referencia comparativa y para analisis en modo Laboratorio; no se recomienda para uso pericial."
+  },
+  "v3": {
+    "f1_macro": 0.621415206358755,
+    "n_features": 7,
+    "n_train": 242361,
+    "n_test": 60591,
+    "clases": [
+      "Analysis",
+      "Backdoors",
+      "Bot",
+      "BruteForce",
+      "DDoS",
+      "DoS",
+      "Exploits",
+      "Fuzzers",
+      "Generic",
+      "Heartbleed",
+      "Infiltration",
+      "Normal",
+      "PortScan",
+      "Reconnaissance",
+      "Shellcode",
+      "Web Attack - Sql Injection",
+      "Web Attack - Xss",
+      "Worms"
+    ],
+    "proposito": "Modelo recomendado para MODEXRE. Incorpora las tres correcciones de la decision de diseno 4 y anade agg_events_per_second. El F1 macro es inferior al de v1 porque mide una tarea de 18 categorias y no de 4: la cifra no es comparable entre ambos. Valido para CUALQUIER fuente de evidencia (Suricata, firewall, PCAP, CSV), porque el ingestor universal normaliza todo al mismo formato antes de llegar al clasificador."
+  },
+  "v2": {
+    "publicado": false,
+    "proposito": "Version intermedia no distribuida. Su manifiesto registra el campo de nombres de clase vacio: se certifico con el flujo que entrenaba un clasificador binario a partir de label, descartando attack_cat. Su F1 macro de 0.9932 corresponde a esa tarea binaria y no a la taxonomia de ataques. Se documenta aqui para dejar constancia del fallo corregido en v3; el cuaderno notebooks/escenarios_agregacion_model_v2.ipynb conserva los escenarios de agregacion empleados."
   }
 }

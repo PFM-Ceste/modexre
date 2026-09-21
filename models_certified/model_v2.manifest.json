@@ -1,0 +1,27 @@
+{
+  "version": "v2",
+  "model_file": "model_v2.ubj",
+  "model_hash": "b1f5c4fb3f1113c05c2f386b979935267661e509721596719717eeb2785cabff",
+  "feature_names": [
+    "agg_distinct_dst_hosts",
+    "agg_distinct_dst_ports",
+    "agg_events_in_window",
+    "agg_events_per_second",
+    "duration",
+    "packets_in",
+    "packets_out"
+  ],
+  "class_names": null,
+  "metrics": {
+    "accuracy": 0.9968972289613969,
+    "f1_macro": 0.9932133186658361,
+    "f1_weighted": 0.996893102810218,
+    "precision_macro": 0.9945300796817746,
+    "recall_macro": 0.9919064942195432,
+    "n_train": 242361,
+    "n_test": 60591
+  },
+  "trained_at": "2026-08-06T11:46:37.777330+00:00",
+  "algorithm": "XGBoost",
+  "xgboost_version": "3.3.0"
+}
