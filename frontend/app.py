@@ -21,6 +21,7 @@ Ejecutar con:  streamlit run frontend/app.py
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -58,6 +59,21 @@ DATA_DIR = Path(tempfile.gettempdir()) / "modexre_data"
 # y los que entrenes tú desde la pestaña Laboratorio se guardan en el
 # mismo sitio, disponibles entre reinicios de la aplicación.
 MODEL_DIR = PROJECT_ROOT / "models_certified"
+
+
+def recommended_version(default: str = "v3") -> str:
+    """Versión certificada que se ofrece por defecto en modo Formal.
+
+    Se lee de models_certified/RESUMEN.json para que el repositorio tenga
+    una única fuente de verdad sobre cuál es el modelo recomendado: así el
+    README, la memoria y la interfaz no pueden desincronizarse. Si el
+    fichero falta o está mal formado se recurre al valor por defecto.
+    """
+    try:
+        with open(MODEL_DIR / "RESUMEN.json", encoding="utf-8") as fh:
+            return json.load(fh).get("recomendado") or default
+    except (OSError, ValueError):
+        return default
 CASE_DIR = DATA_DIR / "cases"
 for d in (DATA_DIR, MODEL_DIR, CASE_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -345,9 +361,15 @@ with tab_formal:
             model_version_sel = available_versions[0]
             st.caption(f"Modelo: **{model_version_sel}** (único disponible).")
         else:
+            _recomendado = recommended_version()
             model_version_sel = st.selectbox(
                 "Modelo certificado a usar",
-                options=sorted(available_versions, key=lambda v: "scan_aggregated" not in v and v != "v1"),
+                options=sorted(available_versions, key=lambda v: (v != _recomendado, v)),
+                help=(
+                    f"Por defecto se propone {_recomendado}, el modelo recomendado para "
+                    "uso pericial. Las versiones anteriores se conservan para análisis "
+                    "comparativos en modo Laboratorio."
+                ),
             )
 
         evidence_file = st.file_uploader(
