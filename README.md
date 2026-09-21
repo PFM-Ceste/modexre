@@ -118,13 +118,21 @@ tanto la alteración de un eslabón como el borrado de uno intermedio.
 
 ## Modelo certificado por defecto
 
-MODEXRE se distribuye con **un único modelo certificado**
-(`models_certified/model_v1`), multi-clase, con agregación causal
-entre flujos:
+El modelo recomendado para uso pericial es
+**`models_certified/model_v3`**, multi-clase, con agregación causal entre
+flujos y con las tres correcciones de la decisión de diseño 4 aplicadas.
+La versión recomendada se declara en `models_certified/RESUMEN.json`, que
+es la fuente de verdad que lee la interfaz para preseleccionarla:
 
-| Clases | F1 macro | Features |
-|---|---|---|
-| Normal, PortScan, DoS, BruteForce | 0.9538 | `agg_distinct_dst_hosts`, `agg_distinct_dst_ports`, `agg_events_in_window`, `duration`, `packets_in`, `packets_out` |
+| Modelo | Clases | F1 macro | n_train | Features |
+|---|---|---|---|---|
+| **v3** (recomendado) | 18 categorías (UNSW-NB15 + CICIDS2017) | 0.6214 | 242.361 | las 6 de v1 más `agg_events_per_second` |
+| v1 (referencia) | Normal, PortScan, DoS, BruteForce | 0.9538 | 3.448 | `agg_distinct_dst_hosts`, `agg_distinct_dst_ports`, `agg_events_in_window`, `duration`, `packets_in`, `packets_out` |
+
+Los dos F1 macro **no son comparables**: v1 mide una tarea de 4 categorías
+y v3 una de 18. El descenso no indica un modelo peor, sino una tarea más
+exigente. v1 es además anterior a la corrección de la decisión de diseño 4,
+por lo que se conserva solo como referencia comparativa en modo Laboratorio.
 
 El modelo no se elige según la fuente de la evidencia: el ingestor
 universal (`ingestion/universal.py`) normaliza toda fuente al mismo
@@ -182,8 +190,8 @@ PowerShell como administrador y ejecuta primero
 cd backend && python -m pytest tests/ -v
 ```
 
-72 tests, cubriendo cada capa de forma aislada y varios recorridos
-end-to-end reales (entrenar → congelar → inferir → explicar; ingesta
+139 tests en 20 módulos, cubriendo cada capa de forma aislada y varios
+recorridos end-to-end reales (entrenar → congelar → inferir → explicar; ingesta
 → OCSF → agregación → features → clasificación → custodia → informe).
 
 ## Generar el informe pericial en Word
@@ -193,19 +201,23 @@ from app.report.report_generator import generate_report_docx
 generate_report_docx(report, chain.get_chain(case_id), "informe.docx")
 ```
 
-Requiere **Node.js** y la librería npm `docx` instalada (usada solo
-para este paso; el resto del backend es Python puro):
+Usa **python-docx**, ya incluido en `requirements.txt`. No hace falta
+Node.js ni ninguna dependencia adicional.
+
+El repositorio conserva además una vía alternativa basada en la librería
+npm `docx` (`backend/app/report/scripts/generate_report_docx.js`), que la
+aplicación **no** utiliza. Solo si se invoca explícitamente
+`generate_report_docx_via_node()` hace falta Node.js:
 
 ```bash
-npm install docx
+npm install docx   # solo para la vía alternativa
 ```
 
 ## Limitaciones conocidas (alcance consciente, no bugs)
 
-- El modelo de clasificación se ha validado hasta ahora con datos de
-  prueba pequeños en los tests. El entrenamiento con el dataset real
-  completo del TFM1 queda pendiente de ejecutar y documentar con sus
-  métricas finales.
+- El modelo por defecto (`model_v3`) se entrenó sobre 242.361 eventos
+  (60.591 de prueba). El entrenamiento sobre el dataset real completo
+  del TFM1, con sus métricas finales documentadas, queda pendiente.
 - El parser CEF no cubre dialectos propietarios completos de cada
   fabricante de firewall.
 - La agregación de flujo desde PCAP es una implementación propia
