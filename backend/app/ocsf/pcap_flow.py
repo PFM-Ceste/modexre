@@ -38,6 +38,31 @@ def pcap_flow_to_ocsf(flow: dict[str, Any]) -> dict[str, Any]:
         "activity_id": DEFAULT_ACTIVITY_ID,
         "severity_id": 1,  # Informational: la severidad real la asigna el clasificador, no la captura
         "src_endpoint": {"ip": flow.get("src_ip"), "port": flow.get("src_port")},
+        # LIMITACIÓN CONOCIDA, deliberada: no se publica el puerto de
+        # destino, aunque ingestion/pcap_reader.py ya lo entrega en
+        # `dst_port`.
+        #
+        # Consecuencia: agg_distinct_dst_ports vale cero en todo
+        # análisis de PCAP, de modo que la característica de mayor peso
+        # de model_v3 (22,1% de ganancia) no interviene en esta fuente.
+        #
+        # Por qué no se corrige aquí sin más: model_v3 se entrenó con
+        # valores reales de esa característica, pero en inferencia sobre
+        # PCAP siempre recibió cero. Es un desajuste entre entrenamiento
+        # y servicio, y las métricas publicadas de esta fuente se
+        # obtuvieron con él presente. Publicar el puerto lo elimina,
+        # pero traslada la inferencia a una región del espacio de
+        # características donde el modelo actual se comporta de forma
+        # inestable: medido sobre una captura de barrido horizontal, la
+        # identificación del origen atacante como Reconnaissance cae del
+        # 29% al 3%, y el grueso de sus flujos pasa a repartirse entre
+        # Exploits y Bot.
+        #
+        # Corregirlo de verdad exige reentrenar con escenarios de
+        # agregación que cubran la geometría real de un barrido (ver la
+        # limitación sobre la frontera de PortScan), no solo soltar el
+        # dato aquí. Hasta entonces se deja constancia del desajuste en
+        # vez de ocultarlo.
         "dst_endpoint": {"ip": flow.get("dst_ip")},
         "connection_info": {
             "protocol_raw": flow.get("protocol"),

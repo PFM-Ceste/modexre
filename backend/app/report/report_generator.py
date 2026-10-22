@@ -29,6 +29,97 @@ from app.pipeline.formal_pipeline import FormalCaseReport
 ATTACK_LABEL_MAP = {0: "Tráfico normal", 1: "Actividad potencialmente maliciosa"}
 
 
+# --- Descripción de la evidencia en el informe -----------------------
+#
+# El identificador interno del tipo de fuente ("firewall_cef",
+# "csv_unlabeled:cicids2017"...) es el que circula por el pipeline y
+# queda registrado en la cadena de custodia, pero no es prosa aceptable
+# en un documento dirigido a un juzgado. Estas funciones lo traducen.
+
+_NOMBRES_DE_FUENTE = {
+    "pcap": "captura de tráfico de red (PCAP)",
+    "suricata_eve": "alertas del IDS Suricata (EVE JSON)",
+    "firewall_cef": "registro de firewall en formato CEF",
+    "csv_labeled": "fichero CSV de flujos de red, con etiquetado de origen",
+    "generic_flow_csv": "fichero CSV de flujos de red",
+}
+
+_DIALECTOS_CSV = {
+    "cicids2017": "CICIDS2017",
+    "unsw_nb15": "UNSW-NB15",
+    "kitsune": "Kitsune",
+    "generic_flow_csv": "genérico",
+}
+
+
+def describir_fuente(source_name: str) -> str:
+    """Descripción legible del tipo de evidencia analizada."""
+    if not source_name:
+        return "fuente no identificada"
+    # Informes guardados antes de que el pipeline resolviera el tipo:
+    # llevan grabado el literal del parámetro, que no describe nada.
+    if source_name == "auto":
+        return "fuente detectada automáticamente"
+    if source_name in _NOMBRES_DE_FUENTE:
+        return _NOMBRES_DE_FUENTE[source_name]
+    # Formato "csv_unlabeled:<dialecto>" que produce el ingestor universal.
+    if source_name.startswith("csv_unlabeled:"):
+        dialecto = source_name.split(":", 1)[1]
+        nombre = _DIALECTOS_CSV.get(dialecto, dialecto)
+        return f"fichero CSV de flujos de red sin etiquetar (formato {nombre})"
+    return source_name
+
+
+# Clases OCSF que puede producir la capa de normalización. Antes el
+# informe afirmaba siempre "Detection Finding (class_uid=2004)", lo
+# cual es FALSO para un PCAP o un CSV de flujos: esos se normalizan a
+# Network Activity (4001). En un informe pericial eso es un error
+# factual sobre el tratamiento dado a la evidencia, no un detalle
+# cosmético, así que se deduce de los eventos reales.
+_CLASES_OCSF = {
+    4001: ("Network Activity", 4),
+    2004: ("Detection Finding", 2),
+}
+
+
+def describir_clase_ocsf(report: FormalCaseReport) -> str:
+    """Clase o clases OCSF a las que se normalizó la evidencia de este
+    caso, leídas de los propios eventos en vez de darlas por supuestas.
+
+    Devuelve solo la denominación de la clase ("Network Activity
+    (category_uid=4, class_uid=4001)"), para que cada texto la encaje
+    en su propia frase.
+    """
+    clases = {
+        f.ocsf_event.get("class_uid")
+        for f in report.findings
+        if f.ocsf_event.get("class_uid")
+    }
+    if not clases:
+        return "no determinada (sin eventos clasificados)"
+
+    partes = []
+    for class_uid in sorted(clases):
+        nombre, category_uid = _CLASES_OCSF.get(class_uid, (None, None))
+        if nombre is None:
+            partes.append(f"class_uid={class_uid}")
+        else:
+            partes.append(f"{nombre} (category_uid={category_uid}, class_uid={class_uid})")
+    return " y ".join(partes)
+
+
+def nombre_fichero(file_path: str) -> str:
+    """Nombre del fichero de evidencia, sin la ruta del sistema.
+
+    La ruta absoluta de la máquina que ejecutó el análisis (una carpeta
+    temporal del perfil de usuario) no aporta nada a la identificación
+    de la evidencia -- eso lo hace su hash SHA-256, que ya consta en la
+    cadena de custodia -- y expone la estructura interna del equipo en
+    un documento destinado a terceros.
+    """
+    return Path(file_path).name if file_path else "no especificado"
+
+
 def _format_finding_summary(report: FormalCaseReport) -> tuple[int, int]:
     n_malicious = sum(1 for f in report.findings if f.prediction["label"] == 1)
     n_normal = len(report.findings) - n_malicious
@@ -77,9 +168,9 @@ def generate_executive_summary(report: FormalCaseReport) -> str:
 def generate_technical_annex(report: FormalCaseReport) -> str:
     lines = ["", "## Anexo Técnico", "", "### Metodología", ""]
     lines += [
-        "- **Fuente de datos:** " + report.source_name,
+        "- **Fuente de datos:** " + describir_fuente(report.source_name),
         "- **Normalización:** OCSF (Open Cybersecurity Schema Framework), "
-        "clase Detection Finding (class_uid=2004).",
+        + "clase " + describir_clase_ocsf(report) + ".",
         "- **Modelo:** XGBoost, entrenado y congelado en modo Laboratorio; "
         "usado exclusivamente en modo inferencia en este caso.",
         "- **Explicabilidad:** SHAP (TreeExplainer), explicación local por evento.",
@@ -306,26 +397,46 @@ def _add_page_number_field(paragraph) -> None:
     run._r.append(fld_end)
 
 
-def _add_toc_field(doc) -> None:
-    """Inserta un índice dinámico (campo TOC). Word lo muestra vacío
-    ('Haga clic para actualizar el índice') hasta que el usuario
-    actualiza el campo (clic derecho > Actualizar campo, o F9) — es
-    el mismo comportamiento que tiene cualquier tabla de contenido
-    automática de Word, no un límite de este generador."""
+def _add_toc_field(doc):
+    """Inserta un índice dinámico (campo TOC) y devuelve el elemento que
+    hace de resultado del campo, para rellenarlo después.
+
+    El campo se marca como `dirty`, de modo que Word y LibreOffice lo
+    recalculan al abrir el documento y muestran el índice real con sus
+    números de página.
+
+    Mientras no se recalcule, lo que se ve es el "resultado" guardado
+    dentro del propio campo. Antes ese resultado era la frase «Haga clic
+    derecho aquí y seleccione "Actualizar campo"»: una instrucción al
+    lector, impropia de un documento que se entrega a un juzgado, y que
+    dejaba la página del índice en blanco. Ahora se rellena con la lista
+    real de secciones (ver _rellenar_indice_de_respaldo), así que el
+    índice es legible se actualice el campo o no.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
 
     p = doc.add_paragraph()
+    # Alineación explícita a la izquierda: además de ser lo correcto en
+    # un índice, impide que _justify_body_paragraphs() lo justifique.
+    # Justificado, cada entrada se estira de margen a margen
+    # ("Declaración      de      Cumplimiento"), porque las líneas van
+    # separadas por saltos manuales dentro de un mismo párrafo.
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     run = p.add_run()
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
+    # Fuerza el recálculo del campo al abrir el documento.
+    fld_begin.set(qn("w:dirty"), "true")
     instr = OxmlElement("w:instrText")
     instr.set(qn("xml:space"), "preserve")
     instr.text = 'TOC \\o "1-3" \\h \\z \\u'
     fld_sep = OxmlElement("w:fldChar")
     fld_sep.set(qn("w:fldCharType"), "separate")
     placeholder = OxmlElement("w:t")
-    placeholder.text = "Haga clic derecho aquí y seleccione \"Actualizar campo\" para generar el índice."
+    placeholder.set(qn("xml:space"), "preserve")
+    placeholder.text = "Índice"
     fld_end = OxmlElement("w:fldChar")
     fld_end.set(qn("w:fldCharType"), "end")
     run._r.append(fld_begin)
@@ -333,6 +444,48 @@ def _add_toc_field(doc) -> None:
     run._r.append(fld_sep)
     run._r.append(placeholder)
     run._r.append(fld_end)
+    return placeholder
+
+
+def _rellenar_indice_de_respaldo(doc, placeholder) -> None:
+    """Escribe la lista de secciones dentro del resultado del campo TOC.
+
+    Se ejecuta al final, cuando el documento ya tiene todos sus
+    encabezados: recorre los de nivel 1 y 2 y los vuelca como líneas
+    dentro del propio campo. Si el lector actualiza el índice, Word
+    sustituye esto por la tabla de contenido con números de página; si
+    no lo hace, al menos ve la estructura del documento en vez de una
+    página vacía.
+    """
+    if placeholder is None:
+        return
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    entradas = []
+    for p in doc.paragraphs:
+        estilo = (p.style.name or "") if p.style is not None else ""
+        texto = p.text.strip()
+        if not texto or texto == "Índice":
+            continue
+        if estilo == "Heading 1":
+            entradas.append(texto)
+        elif estilo == "Heading 2":
+            entradas.append("    " + texto)
+
+    if not entradas:
+        return
+
+    padre = placeholder.getparent()
+    posicion = list(padre).index(placeholder)
+    placeholder.text = entradas[0]
+    for i, entrada in enumerate(entradas[1:], start=1):
+        salto = OxmlElement("w:br")
+        texto = OxmlElement("w:t")
+        texto.set(qn("xml:space"), "preserve")
+        texto.text = entrada
+        padre.insert(posicion + i * 2 - 1, salto)
+        padre.insert(posicion + i * 2, texto)
 
 
 def _kv_paragraph(doc, label: str, value: str):
@@ -410,6 +563,39 @@ def _apply_document_styles(doc, heading_font: str = "Arial") -> None:
             continue
 
 
+def _justify_body_paragraphs(doc) -> None:
+    """Justifica el texto de cuerpo del documento (alineado a ambos
+    márgenes), que es la convención tipográfica de un informe pericial.
+
+    Se aplica como paso final, justo antes de guardar, en vez de fijar
+    la alineación en el estilo "Normal": ese estilo lo heredan también
+    las celdas de tabla, y justificar una columna estrecha abre huecos
+    enormes entre palabras. Aquí solo se tocan los párrafos de cuerpo:
+
+      - Los encabezados se dejan alineados a la izquierda, como
+        corresponde a un título.
+      - Los párrafos con alineación ya fijada explícitamente (portada
+        centrada, pies de página, pies de tabla) se respetan tal cual.
+      - Los párrafos vacíos o que solo contienen una imagen se saltan.
+      - Las celdas de tabla quedan fuera por construcción:
+        `doc.paragraphs` devuelve únicamente los párrafos de nivel de
+        cuerpo, no los contenidos en tablas.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    for paragraph in doc.paragraphs:
+        if not paragraph.text.strip():
+            continue
+        style_name = (paragraph.style.name or "") if paragraph.style is not None else ""
+        # "Título" cubre el caso de una plantilla de Word en español,
+        # donde los estilos de encabezado llegan ya localizados.
+        if style_name.startswith(("Heading", "Título", "Title")):
+            continue
+        if paragraph.alignment is not None:
+            continue
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+
 def generate_report_docx(
     report: FormalCaseReport,
     chain_records: list[Any],
@@ -443,6 +629,14 @@ def generate_report_docx(
     from docx.enum.section import WD_SECTION
 
     data = report_to_json(report, chain_records)
+
+    # Para el documento se sustituyen el identificador interno de la
+    # fuente y la ruta del fichero por sus formas legibles. En
+    # report_to_json() se conservan en crudo a propósito: esa salida es
+    # la representación legible por máquina, y el identificador exacto
+    # debe seguir constando ahí y en la cadena de custodia.
+    data["source_name"] = describir_fuente(report.source_name)
+    data["file_path"] = nombre_fichero(report.file_path)
     verification = data["custody_verification"] or {}
     findings = data["findings"]
     n_malicious = sum(1 for f in findings if f["prediction"]["label"] != 0
@@ -530,7 +724,7 @@ def generate_report_docx(
 
     # ============================== ÍNDICE ==============================
     doc.add_heading("Índice", level=1)
-    _add_toc_field(doc)
+    _marcador_indice = _add_toc_field(doc)
     doc.add_page_break()
 
     # ========================= RESUMEN EJECUTIVO =========================
@@ -632,9 +826,9 @@ def generate_report_docx(
 
     doc.add_heading("Tipos de Datos", level=2)
     doc.add_paragraph(
-        f"La evidencia corresponde a eventos de tipo \"{data['source_name']}\", "
-        f"normalizados al estándar OCSF (clase Detection Finding, "
-        f"category_uid=2, class_uid=2004) tras su ingesta."
+        f"La evidencia corresponde a eventos procedentes de "
+        f"{data['source_name']}, normalizados tras su ingesta al estándar "
+        f"OCSF, clase {describir_clase_ocsf(report)}."
     )
 
     doc.add_heading("Métodos de Recolección", level=2)
@@ -903,6 +1097,9 @@ def generate_report_docx(
         doc.add_heading("Incidencias Detectadas en la Verificación", level=2)
         _bullet_list(doc, verification["issues"])
 
+    _rellenar_indice_de_respaldo(doc, _marcador_indice)
+    _justify_body_paragraphs(doc)
+
     buffer = io.BytesIO()
     doc.save(buffer)
     doc_bytes = buffer.getvalue()
@@ -1096,6 +1293,14 @@ def generate_report_docx_judicial(
     from docx.oxml import OxmlElement
 
     data = report_to_json(report, chain_records)
+
+    # Para el documento se sustituyen el identificador interno de la
+    # fuente y la ruta del fichero por sus formas legibles. En
+    # report_to_json() se conservan en crudo a propósito: esa salida es
+    # la representación legible por máquina, y el identificador exacto
+    # debe seguir constando ahí y en la cadena de custodia.
+    data["source_name"] = describir_fuente(report.source_name)
+    data["file_path"] = nombre_fichero(report.file_path)
     verification = data["custody_verification"] or {}
     findings = data["findings"]
     fecha_hoy = datetime.now(timezone.utc).strftime("%d/%m/%Y")
@@ -1519,6 +1724,8 @@ def generate_report_docx_judicial(
     doc.add_paragraph(perito_nombre)
     doc.add_paragraph(perito_titulacion)
     doc.add_paragraph(f"Colegiado n.º {perito_colegiado}")
+
+    _justify_body_paragraphs(doc)
 
     buffer = io.BytesIO()
     doc.save(buffer)

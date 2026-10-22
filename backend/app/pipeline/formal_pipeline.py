@@ -145,10 +145,21 @@ class FormalCaseRunner:
 
         path = Path(path)
 
+        # Tipo de fuente REALMENTE empleado, que es el que debe figurar
+        # en el informe pericial. Antes se guardaba `source_type` tal
+        # cual, de modo que un análisis lanzado con auto-detección
+        # (lo habitual desde la interfaz) dejaba escrito el literal
+        # "auto" como nombre de la fuente en ocho puntos del documento
+        # -- "eventos de tipo auto", "Fuente: auto" --, pese a que el
+        # tipo detectado se conocía y ya se registraba en la cadena de
+        # custodia.
+        fuente_resuelta = source_type
+
         if source_type == "auto":
             from app.ingestion.universal import normalize_any
 
             universal_result = normalize_any(path)
+            fuente_resuelta = universal_result.source_type_detected
             self.chain.add_record(
                 case_id=case_id,
                 operation="ingest",
@@ -219,7 +230,7 @@ class FormalCaseRunner:
 
         if not ocsf_events:
             report = FormalCaseReport(
-                case_id=case_id, source_name=source_type, file_path=str(path), findings=[]
+                case_id=case_id, source_name=fuente_resuelta, file_path=str(path), findings=[]
             )
             report.custody_verification = self.chain.verify(case_id)
             _notify("done", "Sin eventos válidos", "0 hallazgos")
@@ -285,7 +296,7 @@ class FormalCaseRunner:
                 f"{len(findings)} eventos clasificados con modelo {self.classifier.version}")
 
         report = FormalCaseReport(
-            case_id=case_id, source_name=source_type, file_path=str(path), findings=findings,
+            case_id=case_id, source_name=fuente_resuelta, file_path=str(path), findings=findings,
         )
         report.custody_verification = self.chain.verify(case_id)
         verified = "íntegra" if report.custody_verification["valid"] else "CON INCIDENCIAS"

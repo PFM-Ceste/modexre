@@ -171,6 +171,9 @@ def build_stratified_training_sample(
     return df_train
 
 
+_TABLA_SDV = "table"
+
+
 def fit_synthesizer(df_train: pd.DataFrame, config: SyntheticGenerationConfig):
     """Ajusta un GaussianCopulaSynthesizer (SDV) sobre la muestra
     estratificada. Import diferido de sdv: es una dependencia pesada
@@ -185,14 +188,44 @@ def fit_synthesizer(df_train: pd.DataFrame, config: SyntheticGenerationConfig):
     df_sdv["attack_cat"] = df_sdv["attack_cat"].astype(str)
     df_sdv["label"] = df_sdv["label"].astype(str)
 
-    metadata = Metadata.detect_from_dataframe(df_sdv)
+    # SDV 2.0 retiró Metadata.detect_from_dataframe() (una sola tabla) y
+    # dejó únicamente detect_from_dataframes(), que recibe un diccionario
+    # de tablas; con ese objeto, fit() exige también un diccionario. Se
+    # admiten las dos APIs para que el proyecto no quede atado a una
+    # versión concreta de una dependencia que solo usa el modo
+    # Laboratorio. El nombre de tabla es el mismo que ya aparece en los
+    # metadatos generados por los cuadernos SINTETICO_* del TFM1 (clave
+    # "tables"."table" de *_metadata_gc.json), así que el artefacto
+    # resultante es idéntico al que se venía produciendo.
+    if hasattr(Metadata, "detect_from_dataframe"):
+        metadata = Metadata.detect_from_dataframe(df_sdv)
+        datos_fit = df_sdv
+    else:
+        metadata = Metadata.detect_from_dataframes({_TABLA_SDV: df_sdv})
+        datos_fit = {_TABLA_SDV: df_sdv}
+
     synth = GaussianCopulaSynthesizer(
         metadata,
         default_distribution=config.default_distribution,
         enforce_min_max_values=config.enforce_min_max_values,
     )
-    synth.fit(df_sdv)
+    synth.fit(datos_fit)
     return synth, metadata
+
+
+def _muestrear(synth, num_rows: int) -> pd.DataFrame:
+    """Muestrea del sintetizador devolviendo siempre un DataFrame.
+
+    Contrapartida de la compatibilidad de versiones resuelta en
+    fit_synthesizer: cuando SDV 2.0 construye el sintetizador a partir
+    de un Metadata multi-tabla -- el único que ofrece esa versión --,
+    sample() devuelve un diccionario {nombre_tabla: DataFrame} en vez
+    del DataFrame directo que devolvían las versiones anteriores.
+    """
+    muestra = synth.sample(num_rows=num_rows)
+    if isinstance(muestra, dict):
+        return next(iter(muestra.values()))
+    return muestra
 
 
 def generate_synthetic_dataset(
@@ -230,7 +263,7 @@ def generate_synthetic_dataset(
         header = not output_csv.exists()
         df_part.to_csv(output_csv, index=False, mode="a", header=header)
 
-    syn_normal = synth.sample(num_rows=config.normal_n)
+    syn_normal = _muestrear(synth, config.normal_n)
     syn_normal.columns = normalize_cols(list(syn_normal.columns))
     syn_normal = _enforce_label_from_attack_cat(syn_normal)
     syn_normal["attack_cat"] = "Normal"
@@ -240,7 +273,7 @@ def generate_synthetic_dataset(
     gc.collect()
 
     for cat in attack_categories:
-        syn_attack = synth.sample(num_rows=config.attack_n_each)
+        syn_attack = _muestrear(synth, config.attack_n_each)
         syn_attack.columns = normalize_cols(list(syn_attack.columns))
         syn_attack = _enforce_label_from_attack_cat(syn_attack)
         syn_attack["attack_cat"] = str(cat)

@@ -145,6 +145,21 @@ def read_pcap_flows(
                 "src_ip": acc.initiator_ip,
                 "src_port": acc.initiator_port,
                 "dst_ip": key.ip_b if key.ip_a == acc.initiator_ip else key.ip_a,
+                # Puerto de destino: el del extremo que NO inició el
+                # flujo. La clave está normalizada por dirección (ver
+                # FlowKey.from_packet), así que se elige el mismo lado
+                # que para dst_ip.
+                #
+                # No se emitía, pese a estar disponible aquí, y
+                # app/ocsf/pcap_flow.py no podía entonces rellenar
+                # dst_endpoint.port: la consecuencia era que
+                # agg_distinct_dst_ports valía CERO en todo análisis de
+                # PCAP, es decir que la característica de mayor peso de
+                # model_v3 (22,1% de ganancia) quedaba muerta justo en
+                # la fuente de evidencia con mejor rendimiento del
+                # sistema, y un escaneo vertical de puertos sobre una
+                # captura resultaba indetectable por construcción.
+                "dst_port": key.port_b if key.ip_a == acc.initiator_ip else key.port_a,
                 "protocol": key.protocol,
                 "duration": round(acc.last_ts - acc.first_ts, 6),
                 "packets_out": acc.packets_fwd,

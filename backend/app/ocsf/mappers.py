@@ -109,6 +109,69 @@ _KNOWN_FIELDS_BY_SOURCE: dict[str, dict[str, str]] = {
 }
 
 
+# Alias de columna para los extremos de la conexión y la marca
+# temporal, por orden de preferencia (gana el primero que aparezca).
+#
+# Los CSV limpios del TFM1 no usan un nombre único para estos campos:
+# la limpieza de Kitsune conserva `src`/`sport`/`dst`/`dport`/`time`,
+# la de CICIDS2017 `source_ip`/`destination_ip`/`timestamp`, y UNSW-NB15
+# trae `srcip`/`dsport`/`stime` en su esquema nativo. Resolverlos aquí
+# por alias evita tener que declarar un dialecto por fuente, y permite
+# además que un CSV de flujo exportado por un CICFlowMeter ajeno
+# (generic_flow_csv) aporte sus IP sin configuración previa.
+_SRC_IP_ALIASES = ("src_ip", "source_ip", "srcip", "saddr", "ip_src", "source_address", "src")
+_DST_IP_ALIASES = ("dst_ip", "destination_ip", "dstip", "daddr", "ip_dst", "destination_address", "dst")
+_SRC_PORT_ALIASES = ("src_port", "source_port", "srcport", "sport")
+_DST_PORT_ALIASES = ("dst_port", "destination_port", "dstport", "dsport", "dport")
+_TIMESTAMP_ALIASES = ("time", "timestamp", "stime", "flow_start", "first_seen", "ts")
+
+# Valores centinela que las capas de limpieza usan para "no disponible"
+# en columnas de IP/puerto (p.ej. un paquete sin puerto en Kitsune se
+# exporta como -1). Tratarlos como un valor real inflaría
+# `agg_distinct_dst_ports`, que contaría "-1" como un puerto distinto.
+_SENTINEL_VALUES = {"", "-1", "nan", "none", "null", "0.0.0.0", "unknown", "n/a"}
+
+
+def _clean_endpoint_value(value: Any) -> Any:
+    """Devuelve `value` saneado, o None si representa un dato ausente
+    (None, NaN o uno de los centinelas de _SENTINEL_VALUES).
+
+    Conserva el tipo original en los valores no textuales: una marca
+    temporal epoch (1540450900.0) tiene que seguir siendo numérica,
+    porque flow_aggregation._parse_timestamp la interpreta como epoch
+    solo si es int/float -- convertida a texto intentaría leerla como
+    fecha ISO, fallaría, y la agregación volvería a quedarse a cero.
+    """
+    if _is_missing(value):
+        return None
+    if str(value).strip().lower() in _SENTINEL_VALUES:
+        return None
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def _first_present(event: dict[str, Any], aliases: tuple[str, ...]) -> Any:
+    """Primer alias presente en `event` con un valor utilizable."""
+    for name in aliases:
+        if name in event:
+            cleaned = _clean_endpoint_value(event[name])
+            if cleaned is not None:
+                return cleaned
+    return None
+
+
+def _as_port(value: Any) -> Any:
+    """Normaliza un puerto a int cuando es posible, para que el conteo
+    de puertos distintos no trate 80 y "80" como dos valores."""
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return value
+
+
 class TaxonomyError(ValueError):
     """attack_cat no pertenece a la taxonomía cerrada esperada."""
 
@@ -186,7 +249,7 @@ def event_to_ocsf(source_name: str, event: dict[str, Any], require_label: bool =
         unmapped["attack_cat"] = attack_cat
         unmapped["label"] = event["label"]
 
-    return {
+    ocsf_event: dict[str, Any] = {
         "class_uid": NETWORK_ACTIVITY_CLASS_UID,
         "category_uid": NETWORK_ACTIVITY_CATEGORY_UID,
         "activity_id": DEFAULT_ACTIVITY_ID,
@@ -199,6 +262,49 @@ def event_to_ocsf(source_name: str, event: dict[str, Any], require_label: bool =
         },
         "unmapped": unmapped,
     }
+
+    # Extremos de la conexión y marca temporal.
+    #
+    # Hasta aquí estos campos quedaban únicamente dentro de
+    # `unmapped.raw_flow_features`, donde ninguna capa posterior los
+    # buscaba: el informe pericial lee `src_endpoint.ip` (y mostraba
+    # "n/d"), y -- más grave -- `features/flow_aggregation.py` agrupa
+    # los eventos por `src_endpoint.ip` y los ordena por `time`, de
+    # modo que sin ambos campos las cuatro features de agregación
+    # (agg_distinct_dst_hosts/ports, agg_events_in_window,
+    # agg_events_per_second) salían a cero en TODO CSV analizado en
+    # modo Formal. Eso dejaba al clasificador decidiendo con 3 de las
+    # 7 features de model_v3, y hacía invisible justamente el patrón
+    # que esas features existen para detectar (barrido horizontal /
+    # escaneo de puertos).
+    #
+    # Se emiten con los mismos nombres de campo que ya usan
+    # pcap_flow.py, detection_finding.py y firewall_cef.py, para que
+    # toda fuente llegue al clasificador con la misma forma.
+    #
+    # La adición es deliberadamente aditiva: `raw_flow_features` se
+    # deja intacto, así que el vector de features de los modelos ya
+    # certificados no cambia (las IP son texto y feature_engineering
+    # descarta los valores no numéricos; `time` está excluido ahí por
+    # el hallazgo de fuga temporal de Kitsune, y seguirlo estando es
+    # justo lo que permite publicarlo aquí sin reintroducir esa fuga).
+    src_ip = _first_present(event, _SRC_IP_ALIASES)
+    src_port = _as_port(_first_present(event, _SRC_PORT_ALIASES))
+    dst_ip = _first_present(event, _DST_IP_ALIASES)
+    dst_port = _as_port(_first_present(event, _DST_PORT_ALIASES))
+
+    src_endpoint = {k: v for k, v in (("ip", src_ip), ("port", src_port)) if v is not None}
+    dst_endpoint = {k: v for k, v in (("ip", dst_ip), ("port", dst_port)) if v is not None}
+    if src_endpoint:
+        ocsf_event["src_endpoint"] = src_endpoint
+    if dst_endpoint:
+        ocsf_event["dst_endpoint"] = dst_endpoint
+
+    event_time = _first_present(event, _TIMESTAMP_ALIASES)
+    if event_time is not None:
+        ocsf_event["time"] = event_time
+
+    return ocsf_event
 
 
 def normalize_to_ocsf(source_name: str, event: dict[str, Any], require_label: bool = True) -> dict[str, Any]:

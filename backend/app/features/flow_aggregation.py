@@ -73,6 +73,28 @@ DEFAULT_WINDOW_SECONDS = 60.0
 _MIN_OBSERVED_SECONDS = 1.0
 
 
+# Formatos de fecha no ISO, en orden de preferencia. El mes va primero
+# porque es el orden que declara la propia metadata de CICIDS2017
+# ("%m/%d/%Y %H:%M"), el único dataset de los tres que exporta la fecha
+# como texto con barras.
+#
+# Para una fecha como "05/07/2017" los dos primeros formatos encajan y
+# gana el de mes primero. La ambigüedad es inevitable sin saber el
+# origen, pero no afecta a la agregación: dentro de un mismo fichero la
+# interpretación es consistente, así que el orden relativo de los
+# eventos y la anchura de las ventanas se conservan.
+_FORMATOS_DE_FECHA = (
+    "%m/%d/%Y %H:%M",
+    "%m/%d/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%Y/%m/%d %H:%M:%S",
+    "%d-%m-%Y %H:%M:%S",
+    "%m/%d/%Y",
+    "%d/%m/%Y",
+)
+
+
 def _parse_timestamp(raw: Any) -> Optional[float]:
     """Convierte el timestamp de un evento OCSF (ISO 8601, en 'time'
     o 'unmapped.first_seen') a epoch en segundos. Devuelve None si no
@@ -80,15 +102,47 @@ def _parse_timestamp(raw: Any) -> Optional[float]:
     agregación causal, no se le asigna una ventana arbitraria)."""
     if raw is None:
         return None
+    if isinstance(raw, bool):  # un bool es int en Python: no es una marca temporal
+        return None
     if isinstance(raw, (int, float)):
         return float(raw)
+
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    # Epoch entregado como texto: ocurre al leer un CSV cuyo 'time'
+    # pandas tipa como object (p.ej. si la columna trae algún valor no
+    # numérico). Antes caía al intento de fecha ISO, fallaba, y el
+    # evento quedaba fuera de la agregación causal sin aviso.
     try:
-        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return float(text)
+    except ValueError:
+        pass
+
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()
     except (ValueError, TypeError):
-        return None
+        pass
+
+    # Formatos de fecha no ISO que traen los datasets de referencia.
+    # CICIDS2017 exporta la columna `timestamp` como "7/7/2017 3:30"
+    # (mes primero, sin segundos y sin rellenar con ceros), que
+    # fromisoformat() no acepta: el evento quedaba fuera de la
+    # agregación causal sin aviso, de modo que un CSV de ese dataset
+    # llegaba al clasificador con las cuatro features de agregación a
+    # cero aunque conservara las IP.
+    for formato in _FORMATOS_DE_FECHA:
+        try:
+            dt = datetime.strptime(text, formato)
+        except ValueError:
+            continue
+        return dt.replace(tzinfo=timezone.utc).timestamp()
+
+    return None
 
 
 def _event_timestamp(event: dict[str, Any]) -> Optional[float]:

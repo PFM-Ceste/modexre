@@ -302,9 +302,20 @@ with tab_formal:
         "más de lo necesario sin aportar nada distinto."
     )
 
+    # Solo se ofrecen las versiones cuyo fichero de modelo existe de
+    # verdad. El desplegable se construía a partir de los manifiestos,
+    # y hay manifiestos sin modelo: el de v2 se conserva a propósito
+    # como constancia documental del fallo de certificación corregido
+    # en v3 (entrenaba un clasificador binario descartando attack_cat),
+    # pero su .ubj no se distribuye. Al listarlo, bastaba elegirlo para
+    # que el análisis abortara con FileNotFoundError.
     available_versions = [
-        m.stem.replace(".manifest", "").replace("model_", "")
-        for m in sorted(MODEL_DIR.glob("*.manifest.json"))
+        version
+        for version in (
+            m.stem.replace(".manifest", "").replace("model_", "")
+            for m in sorted(MODEL_DIR.glob("*.manifest.json"))
+        )
+        if (MODEL_DIR / f"model_{version}.ubj").exists()
     ]
     if not available_versions:
         st.warning("No hay ningún modelo certificado. Ve primero a la pestaña Laboratorio.")
